@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visor 3D de Rutas (Mapbox)</title>
+  </head>
+  <body>
+    <div id="token-warning" class="token-warning">
+      ⚠️ Necesitas configurar tu MAPBOX_TOKEN en src/main.js para que el mapa funcione. Consíguelo gratis en mapbox.com.
+    </div>
+    <div id="map"></div>
+    <div class="control-panel">
+      <h3>Sube tu ruta (.gpx)</h3>
+      <input type="file" id="gpx-upload" accept=".gpx" />
+      <div class="player-controls">
+        <button id="play-btn" disabled>▶</button>
+        <input type="range" id="timeline" min="0" max="100" value="0" disabled />
+        <select id="speed-selector" disabled title="Velocidad">
+          <option value="0.25">0.25x</option>
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+          <option value="5">5x</option>
+          <option value="10">10x</option>
+        </select>
+        <select id="style-selector" title="Capa base">
+          <option value="mapbox://styles/mapbox/outdoors-v12">⛰️ Montaña</option>
+          <option value="mapbox://styles/mapbox/satellite-v9">🛰️ Satélite</option>
+          <option value="mapbox://styles/mapbox/dark-v11">🌙 Oscuro</option>
+          <option value="mapbox://styles/mapbox/light-v11">☀️ Claro</option>
+        </select>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

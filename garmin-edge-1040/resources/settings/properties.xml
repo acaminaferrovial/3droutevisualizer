@@ -1,0 +1,4 @@
+<properties>
+    <property id="apiUrl" type="string">https://tu-dominio-pro.com/api/garmin/live</property>
+    <property id="apiKey" type="string"></property>
+</properties>

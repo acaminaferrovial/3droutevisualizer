@@ -1,0 +1,5 @@
+<strings>
+    <string id="AppName">Route3D Live</string>
+    <string id="ApiUrlTitle">URL API Route3D (HTTPS)</string>
+    <string id="ApiKeyTitle">Clave personal Garmin (r3d_...)</string>
+</strings>

@@ -1,0 +1,8 @@
+<settings>
+    <setting propertyKey="@Properties.apiUrl" title="@Strings.ApiUrlTitle">
+        <settingConfig type="url" required="true"/>
+    </setting>
+    <setting propertyKey="@Properties.apiKey" title="@Strings.ApiKeyTitle">
+        <settingConfig type="alphaNumeric" required="true"/>
+    </setting>
+</settings>

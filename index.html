@@ -3,35 +3,1543 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Visor 3D de Rutas (Mapbox)</title>
+    <meta name="theme-color" content="#f24e1e" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Route 3D — Ciclismo y Planificación</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
-    <div id="token-warning" class="token-warning">
-      ⚠️ Necesitas configurar tu MAPBOX_TOKEN en src/main.js para que el mapa funcione. Consíguelo gratis en mapbox.com.
+    <!-- Alerta de Token Mapbox -->
+    <div id="token-warning" class="token-warning" style="display: none;">
+      Configura <code>VITE_MAPBOX_TOKEN</code> en <code>.env</code> para activar el mapa y relieve 3D.
     </div>
-    <div id="map"></div>
-    <div class="control-panel">
-      <h3>Sube tu ruta (.gpx)</h3>
-      <input type="file" id="gpx-upload" accept=".gpx" />
-      <div class="player-controls">
-        <button id="play-btn" disabled>▶</button>
-        <input type="range" id="timeline" min="0" max="100" value="0" disabled />
-        <select id="speed-selector" disabled title="Velocidad">
-          <option value="0.25">0.25x</option>
-          <option value="0.5">0.5x</option>
-          <option value="1" selected>1x</option>
-          <option value="2">2x</option>
-          <option value="5">5x</option>
-          <option value="10">10x</option>
-        </select>
-        <select id="style-selector" title="Capa base">
-          <option value="mapbox://styles/mapbox/outdoors-v12">⛰️ Montaña</option>
-          <option value="mapbox://styles/mapbox/satellite-v9">🛰️ Satélite</option>
-          <option value="mapbox://styles/mapbox/dark-v11">🌙 Oscuro</option>
-          <option value="mapbox://styles/mapbox/light-v11">☀️ Claro</option>
-        </select>
+
+    <!-- PANTALLA DE ACCESO PRIVADO (SOLO LOGIN) -->
+    <div id="auth-screen" class="auth-screen" style="display: flex;">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <span class="logo-mark" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 17l6-6 4 4 8-8" />
+              <path d="M17 7h4v4" />
+            </svg>
+          </span>
+          <span class="brand-name">Route<span class="brand-accent">3D</span></span>
+        </div>
+
+        <p class="auth-private-subtitle">Acceso privado · Inicia sesión con tu cuenta personal</p>
+
+        <p id="auth-error" class="auth-error" style="display: none;"></p>
+
+        <!-- Formulario Login -->
+        <form id="login-form" class="auth-form">
+          <div class="form-group">
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" placeholder="tu@email.com" autocomplete="username" required />
+          </div>
+          <div class="form-group">
+            <label for="login-password">Contraseña</label>
+            <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" required />
+          </div>
+          <button type="submit" class="btn btn-primary auth-submit-btn" id="login-submit-btn">Iniciar sesión</button>
+        </form>
       </div>
     </div>
+
+    <!-- Header Minimalista -->
+    <header class="app-header">
+      <div class="header-inner">
+        <div class="header-left">
+          <button class="logo" id="logo-home-btn" type="button">
+            <span class="logo-mark" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 17l6-6 4 4 8-8" />
+                <path d="M17 7h4v4" />
+              </svg>
+            </span>
+            <span class="brand-name">Route<span class="brand-accent">3D</span></span>
+          </button>
+
+          <nav class="nav-tabs" aria-label="Navegación principal">
+            <button class="nav-tab active" data-tab="activities" type="button">Actividades</button>
+            <button class="nav-tab" data-tab="planner" type="button">Planificador</button>
+            <button class="nav-tab" data-tab="segments" type="button">Segmentos</button>
+            <button class="nav-tab" data-tab="lab" type="button">Presiones</button>
+            <button class="nav-tab" data-tab="stats" type="button">Estadísticas</button>
+            <button class="nav-tab" data-tab="profile" type="button">Mi Perfil</button>
+          </nav>
+        </div>
+
+        <div class="header-right">
+          <div class="db-status-badge" id="db-status-badge" title="Estado del servidor">
+            <span class="status-dot"></span>
+            <span id="db-status-text">Conectando</span>
+          </div>
+          <button id="theme-toggle-btn" class="btn-icon-only theme-toggle-btn" type="button" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+          </button>
+          <button id="open-upload-modal-btn" class="btn btn-primary" type="button">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <span>Subir GPX</span>
+          </button>
+          <button id="header-user-btn" class="header-user-btn" type="button" title="Ir a Mi Perfil">
+            <span class="user-avatar-sm" id="header-user-avatar">A</span>
+            <span class="header-user-name" id="header-user-name">Mi Perfil</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="main-content">
+      <!-- PESTAÑA 1: ACTIVIDADES -->
+      <section id="tab-activities" class="tab-pane active">
+        <div class="page-container">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Rutas en Bicicleta</h1>
+              <p class="page-subtitle" id="activities-count">Tus salidas y entrenamientos de ciclismo</p>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <div class="sport-filters" id="sport-filters" role="tablist" aria-label="Filtrar por modalidad de ciclismo">
+              <button class="filter-chip active" data-type="all" type="button">Todas</button>
+              <button class="filter-chip" data-type="Ride" type="button">Carretera</button>
+              <button class="filter-chip" data-type="MountainBikeRide" type="button">MTB</button>
+              <button class="filter-chip" data-type="GravelRide" type="button">Gravel</button>
+              <button class="filter-chip" data-type="VirtualRide" type="button">Rodillo / TT</button>
+            </div>
+
+            <div class="search-sort-group">
+              <div class="search-box">
+                <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input type="text" id="activity-search" placeholder="Buscar" autocomplete="off" />
+              </div>
+
+              <div class="date-range-filter" aria-label="Filtrar entre fechas">
+                <span class="date-range-label">Desde</span>
+                <input type="date" id="activity-date-from" class="date-range-input" title="Fecha inicio" />
+                <span class="date-range-sep">→</span>
+                <span class="date-range-label">Hasta</span>
+                <input type="date" id="activity-date-to" class="date-range-input" title="Fecha fin" />
+                <button type="button" id="clear-date-range-btn" class="date-range-clear" title="Limpiar fechas" style="display: none;">&times;</button>
+              </div>
+
+              <select id="activity-gear-filter" class="select-dropdown" aria-label="Filtrar por bicicleta">
+                <option value="all">Todas las bicicletas</option>
+              </select>
+
+              <select id="activity-sort" class="select-dropdown" aria-label="Ordenar actividades">
+                <option value="startDate-desc">Más recientes</option>
+                <option value="startDate-asc">Más antiguas</option>
+                <option value="movingTime-desc">Mayor tiempo</option>
+                <option value="movingTime-asc">Menor tiempo</option>
+                <option value="distance-desc">Mayor distancia</option>
+                <option value="totalElevationGain-desc">Mayor desnivel</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="activities-grid" id="activities-container">
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <p>Cargando actividades…</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PESTAÑA: PLANIFICADOR DE RUTAS EN EL MAPA -->
+      <section id="tab-planner" class="tab-pane">
+        <div class="viewer-layout">
+          <div class="map-viewport">
+            <div id="planner-map"></div>
+
+            <!-- Barra Superior Flotante del Planificador -->
+            <div class="map-top-bar">
+              <div style="display: flex; align-items: center; gap: 8px; pointer-events: auto;">
+                <div class="map-location-search-wrap">
+                  <input
+                    type="text"
+                    id="planner-location-input"
+                    class="floating-location-input"
+                    placeholder="Ir a municipio, puerto o región de España…"
+                    autocomplete="off"
+                  />
+                  <div id="planner-location-results" class="map-location-results" style="display: none;"></div>
+                </div>
+                <div class="floating-pill seg-draw-hint-pill">
+                  <span class="seg-dot start"></span>
+                  <span id="planner-status-text">Haz clic en el mapa para diseñar tu ruta</span>
+                </div>
+              </div>
+
+              <div class="map-top-controls">
+                <select id="planner-color-mode" class="floating-select" title="Pintar la ruta según métrica">
+                  <option value="wind">Color: Viento</option>
+                  <option value="temp">Color: Temp. °C</option>
+                  <option value="grade">Color: Pendiente</option>
+                  <option value="rain">Color: Lluvia</option>
+                </select>
+                <div class="map-pill-group">
+                  <button id="planner-water-btn" class="floating-pill toggle-3d-btn" type="button" title="Mostrar fuentes de agua potable (+40.000 en España) cerca del recorrido">
+                    <span>Fuentes</span>
+                  </button>
+                  <button id="planner-add-water-btn" class="floating-pill toggle-3d-btn" type="button" title="Haz clic en el mapa para añadir una fuente de agua que conozcas">
+                    <span>+ Fuente</span>
+                  </button>
+                  <button id="planner-heatmap-btn" class="floating-pill toggle-3d-btn" type="button" title="Mostrar mapa de calor con trazas reales de ciclistas en la zona">
+                    <span>Calor</span>
+                  </button>
+                </div>
+                <div class="map-pill-group">
+                  <button id="planner-snap-btn" class="floating-pill toggle-3d-btn active" type="button" title="Seguir carreteras y senderos automáticamente">
+                    <span id="planner-snap-text">Camino: Sí</span>
+                  </button>
+                  <button id="planner-loop-btn" class="floating-pill" type="button" title="Cerrar ruta circular volviendo al punto de inicio">
+                    <span>Circular</span>
+                  </button>
+                  <button id="planner-reverse-btn" class="floating-pill" type="button" title="Invertir sentido de la ruta">
+                    <span>Invertir</span>
+                  </button>
+                  <button id="planner-undo-btn" class="floating-pill" type="button" title="Deshacer último punto">
+                    <span>Deshacer</span>
+                  </button>
+                  <button id="planner-clear-btn" class="floating-pill" type="button" title="Borrar toda la ruta">
+                    <span>Limpiar</span>
+                  </button>
+                </div>
+                <button id="planner-3d-btn" class="floating-pill toggle-3d-btn" type="button">
+                  <span id="planner-3d-text">3D</span>
+                </button>
+                <select id="planner-style-selector" class="floating-select" title="Estilo de mapa">
+                  <option value="mapbox://styles/mapbox/outdoors-v12">Relieve</option>
+                  <option value="mapbox://styles/mapbox/satellite-v9">Satélite</option>
+                  <option value="mapbox://styles/mapbox/light-v11">Claro</option>
+                  <option value="mapbox://styles/mapbox/dark-v11">Oscuro</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Leyenda Flotante Dinámica en el Mapa del Planificador -->
+            <div id="planner-wind-legend" class="planner-wind-legend" style="display: none;">
+              <span class="wind-legend-title" id="planner-legend-content">
+                Impacto del viento en ruta:
+                <span class="wind-legend-item"><i class="wind-dot tailwind"></i> A favor</span>
+                <span class="wind-legend-item"><i class="wind-dot crosswind"></i> Lateral</span>
+                <span class="wind-legend-item"><i class="wind-dot headwind"></i> En contra</span>
+              </span>
+            </div>
+
+            <!-- Dock Inferior: Métricas en vivo + 6 Gráficos Sincronizados con el Mapa -->
+            <div class="viewer-dock planner-dock">
+              <div class="telemetry-strip">
+                <div class="hud-item">
+                  <span class="hud-label">Distancia</span>
+                  <span class="hud-val" id="planner-hud-dist">0.00 <small>km</small></span>
+                </div>
+                <div class="hud-divider"></div>
+                <div class="hud-item">
+                  <span class="hud-label">Desnivel +</span>
+                  <span class="hud-val text-accent" id="planner-hud-gain">+0 <small>m</small></span>
+                </div>
+                <div class="hud-divider"></div>
+                <div class="hud-item">
+                  <span class="hud-label">Desnivel -</span>
+                  <span class="hud-val" id="planner-hud-loss">-0 <small>m</small></span>
+                </div>
+                <div class="hud-divider"></div>
+                <div class="hud-item">
+                  <span class="hud-label">Tiempo estimado</span>
+                  <span class="hud-val" id="planner-hud-time">00m 00s</span>
+                </div>
+              </div>
+
+              <!-- Pestañas de Gráficos Sincronizados (Elevación, Viento, Temperatura, Lluvia/Nubes, Humedad, UV) -->
+              <div class="planner-chart-tabs-bar">
+                <div class="planner-chart-tabs" id="planner-chart-tabs">
+                  <button type="button" class="p-chart-tab active" data-chart="elevation">Elevación</button>
+                  <button type="button" class="p-chart-tab" data-chart="wind">Viento</button>
+                  <button type="button" class="p-chart-tab" data-chart="temp">Temperatura</button>
+                  <button type="button" class="p-chart-tab" data-chart="rain">Lluvia y Nubes</button>
+                  <button type="button" class="p-chart-tab" data-chart="humidity">Humedad</button>
+                  <button type="button" class="p-chart-tab" data-chart="uv">Índice UV</button>
+                </div>
+                <span class="planner-chart-hover-readout" id="planner-chart-hover-readout">
+                  Pasa el cursor para sincronizar con el mapa
+                </span>
+              </div>
+
+              <div class="planner-chart-box">
+                <canvas id="planner-elevation-canvas" width="680" height="96"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel Lateral del Planificador de Rutas -->
+          <aside class="activity-analysis-drawer">
+            <div class="drawer-header">
+              <span class="sport-badge-lg">Route & Weather Builder</span>
+              <h2>Planificador de Rutas</h2>
+              <p class="detail-subtitle">Diseña de cero o parte de una ruta realizada y simula meteo y viento en movimiento</p>
+            </div>
+
+            <!-- Selector para partir de una ruta ya realizada o subir un archivo GPX directo -->
+            <div class="modal-section-box">
+              <div class="modal-section-head">
+                <h4>Partir de una ruta realizada o subir GPX</h4>
+                <span>Opcional</span>
+              </div>
+              <div class="form-group">
+                <select id="planner-base-activity-select">
+                  <option value="">— Diseñar ruta nueva desde cero en el mapa —</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                <input type="file" id="planner-gpx-file-input" accept=".gpx" style="display: none;" />
+                <button type="button" class="btn btn-secondary btn-xs" id="planner-upload-gpx-btn" style="width: 100%; justify-content: center;">
+                  Cargar archivo .GPX en el planificador
+                </button>
+              </div>
+            </div>
+
+            <form id="planner-save-form" class="modal-section-box">
+              <div class="modal-section-head">
+                <h4>Detalles y ritmo de la ruta</h4>
+                <span id="planner-waypoints-badge">0 puntos</span>
+              </div>
+
+              <div class="form-group">
+                <label for="planner-title">Nombre de la ruta</label>
+                <input
+                  type="text"
+                  id="planner-title"
+                  placeholder="Ej: Vuelta por Azuqueca y Chiloeches"
+                  required
+                />
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="planner-sport">Modalidad</label>
+                  <select id="planner-sport">
+                    <option value="Ride">Ciclismo de Carretera</option>
+                    <option value="MountainBikeRide">MTB / Montaña</option>
+                    <option value="GravelRide">Gravel</option>
+                    <option value="VirtualRide">Contrarreloj / TT</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="planner-speed">Vel. media est. (km/h)</label>
+                  <input type="number" id="planner-speed" min="8" max="55" step="0.5" value="26" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="planner-bike-select">Bicicleta prevista</label>
+                <select id="planner-bike-select">
+                  <option value="">Sin especificar</option>
+                </select>
+              </div>
+
+              <!-- Bloque opcional de Día y Hora para Meteo y Viento en movimiento -->
+              <div class="planner-weather-config-box">
+                <div class="modal-section-head">
+                  <h4>Día y hora de salida (Meteo y Viento)</h4>
+                  <span>Opcional</span>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="planner-date">Día de la salida</label>
+                    <input type="date" id="planner-date" />
+                  </div>
+                  <div class="form-group">
+                    <label for="planner-departure-time">Hora de inicio</label>
+                    <input type="time" id="planner-departure-time" value="09:00" />
+                  </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <button type="button" class="btn btn-secondary btn-xs" id="planner-calc-weather-btn">
+                    Simular meteo
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-xs" id="planner-best-hour-btn" title="Encuentra la mejor hora de salida según luz solar, viento, temperatura y lluvia">
+                    Mejor hora
+                  </button>
+                </div>
+                <div id="planner-best-hours-box" class="planner-best-hours-box" style="display: none;"></div>
+              </div>
+
+              <div class="form-group">
+                <label for="planner-notes">Notas / Puntos de paso</label>
+                <textarea id="planner-notes" rows="2" placeholder="Fuentes de agua, puertos, estado de pistas…"></textarea>
+              </div>
+
+              <div class="planner-form-actions">
+                <button type="button" class="btn btn-secondary" id="planner-export-gpx-btn" title="Descargar archivo .gpx listo para Garmin Edge 1040">
+                  Exportar GPX
+                </button>
+                <button type="submit" class="btn btn-primary" id="planner-save-btn">
+                  Guardar ruta
+                </button>
+              </div>
+            </form>
+
+            <!-- Panel de Resultados de Meteo y Viento Dinámico a lo largo de la Ruta -->
+            <div id="planner-weather-results" class="analysis-section" style="display: none;">
+              <div class="section-title-row">
+                <h3>Meteo y Viento en Movimiento</h3>
+                <span class="profile-hover-info" id="planner-weather-badge">--</span>
+              </div>
+              <div id="planner-weather-summary-card" class="planner-weather-summary-card"></div>
+              <div id="planner-weather-timeline" class="planner-weather-timeline"></div>
+            </div>
+
+            <!-- Lista de Rutas Planificadas Guardadas -->
+            <div class="analysis-section">
+              <div class="section-title-row">
+                <h3>Mis rutas planificadas</h3>
+                <span class="profile-hover-info" id="planned-routes-count">0 rutas</span>
+              </div>
+              <div id="planned-routes-list" class="segments-list-container">
+                <p class="maint-empty">Aún no has guardado rutas planificadas.</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- PESTAÑA: ZONA SEGMENTOS (MAPA POR DEFECTO PARA DIBUJAR SEGMENTOS) -->
+      <section id="tab-segments" class="tab-pane">
+        <div class="viewer-layout">
+          <div class="map-viewport">
+            <div id="segments-map" style="width: 100%; height: 100%;"></div>
+
+            <!-- Barra Superior Flotante del Mapa de Segmentos -->
+            <div class="map-top-bar">
+              <div style="display: flex; align-items: center; gap: 8px; pointer-events: auto;">
+                <div class="map-location-search-wrap">
+                  <input
+                    type="text"
+                    id="seg-location-input"
+                    class="floating-location-input"
+                    placeholder="Ir a municipio, puerto o región de España…"
+                    autocomplete="off"
+                  />
+                  <div id="seg-location-results" class="map-location-results" style="display: none;"></div>
+                </div>
+                <div class="floating-pill seg-draw-hint-pill" id="seg-draw-hint-pill">
+                  <span class="seg-dot start"></span>
+                  <span id="seg-draw-status-text">Haz clic en el mapa para dibujar el segmento</span>
+                </div>
+              </div>
+
+              <div class="map-top-controls">
+                <button id="seg-snap-toggle-btn" class="floating-pill toggle-3d-btn active" type="button" title="Ajustar automáticamente el trazo a la carretera o sendero">
+                  <span id="seg-snap-toggle-text">Seguir camino: Sí</span>
+                </button>
+                <button id="seg-undo-pt-btn" class="floating-pill" type="button" title="Deshacer último punto">
+                  <span>↩ Deshacer</span>
+                </button>
+                <button id="seg-clear-pts-btn" class="floating-pill" type="button" title="Borrar trazo actual">
+                  <span>Limpiar trazo</span>
+                </button>
+                <button id="seg-toggle-3d-btn" class="floating-pill toggle-3d-btn" type="button">
+                  <span id="seg-toggle-3d-text">Vista 3D</span>
+                </button>
+                <select id="seg-style-selector" class="floating-select" title="Estilo de mapa">
+                  <option value="mapbox://styles/mapbox/outdoors-v12">Relieve</option>
+                  <option value="mapbox://styles/mapbox/satellite-v9">Satélite</option>
+                  <option value="mapbox://styles/mapbox/light-v11">Claro</option>
+                  <option value="mapbox://styles/mapbox/dark-v11">Oscuro</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel Lateral de la Zona Segmentos -->
+          <aside class="activity-analysis-drawer">
+            <div class="drawer-header">
+              <span class="sport-badge-lg">Creador en Mapa</span>
+              <h2>Zona de Segmentos</h2>
+              <p class="detail-subtitle">Haz clic punto por punto sobre el mapa para trazar un nuevo segmento</p>
+            </div>
+
+            <!-- Formulario para guardar el segmento dibujado en el mapa -->
+            <form id="draw-segment-form" class="modal-section-box">
+              <div class="modal-section-head">
+                <h4>Nuevo segmento dibujado</h4>
+                <span id="drawn-seg-points-count">0 puntos</span>
+              </div>
+
+              <div class="seg-creator-metrics" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+                <div class="seg-metric">
+                  <span class="seg-metric-lbl">Distancia trazada</span>
+                  <span class="seg-metric-val text-accent" id="drawn-seg-distance">0.00 km</span>
+                </div>
+                <div class="seg-metric">
+                  <span class="seg-metric-lbl">Estado</span>
+                  <span class="seg-metric-val" id="drawn-seg-state" style="font-size: 11.5px;">Marca el inicio</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="drawn-seg-name">Nombre del segmento</label>
+                <input
+                  type="text"
+                  id="drawn-seg-name"
+                  placeholder="Ej: Subida a La Morcuera, Tramo El Pardo…"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="drawn-seg-sport">Modalidad</label>
+                <select id="drawn-seg-sport">
+                  <option value="Ride">Ciclismo de Carretera</option>
+                  <option value="MountainBikeRide">MTB / Montaña</option>
+                  <option value="GravelRide">Gravel</option>
+                  <option value="VirtualRide">Contrarreloj / TT</option>
+                </select>
+              </div>
+
+              <div class="seg-creator-actions">
+                <button type="button" class="btn btn-secondary btn-xs" id="drawn-seg-reset-btn">Limpiar</button>
+                <button type="submit" class="btn btn-primary btn-xs" id="drawn-seg-save-btn">Guardar segmento</button>
+              </div>
+            </form>
+
+            <!-- Lista de todos los Segmentos creados -->
+            <div class="analysis-section">
+              <div class="section-title-row">
+                <h3>Segmentos guardados</h3>
+                <span class="profile-hover-info" id="all-segments-count">0 segmentos</span>
+              </div>
+              <div id="all-segments-list" class="segments-list-container">
+                <p class="maint-empty">Cargando segmentos…</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- PESTAÑA DETALLE DE RUTA (AL PULSAR EN UNA ACTIVIDAD) -->
+      <section id="tab-viewer" class="tab-pane">
+        <div class="viewer-layout">
+          <!-- Mapa -->
+          <div class="map-viewport">
+            <div id="map"></div>
+
+            <!-- Barra Superior Flotante -->
+            <div class="map-top-bar">
+              <button id="map-back-btn" class="floating-pill" type="button">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="19" y1="12" x2="5" y2="12" />
+                  <polyline points="12 19 5 12 12 5" />
+                </svg>
+                <span>Actividades</span>
+              </button>
+
+              <div class="map-top-controls">
+                <button id="toggle-segment-creator-btn" class="floating-pill" type="button">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                    <line x1="4" y1="22" x2="4" y2="15" />
+                  </svg>
+                  <span>+ Crear segmento</span>
+                </button>
+
+                <button id="toggle-3d-btn" class="floating-pill toggle-3d-btn" type="button">
+                  <span id="toggle-3d-text">Vista 3D</span>
+                </button>
+
+                <select id="style-selector" class="floating-select" title="Estilo de mapa">
+                  <option value="mapbox://styles/mapbox/outdoors-v12">Relieve</option>
+                  <option value="mapbox://styles/mapbox/satellite-v9">Satélite</option>
+                  <option value="mapbox://styles/mapbox/light-v11">Claro</option>
+                  <option value="mapbox://styles/mapbox/dark-v11">Oscuro</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Panel Flotante: Creador Interactivo de Segmentos en el Mapa -->
+            <div id="segment-creator-panel" class="segment-creator-panel" style="display: none;">
+              <div class="seg-creator-head">
+                <div>
+                  <h4>Crear segmento en el mapa</h4>
+                  <p>Haz clic en dos puntos de la ruta en el mapa o ajusta los deslizadores</p>
+                </div>
+                <button type="button" class="modal-close" id="close-segment-creator-btn" aria-label="Cerrar">&times;</button>
+              </div>
+
+              <div class="seg-creator-metrics">
+                <div class="seg-metric">
+                  <span class="seg-metric-lbl">Longitud</span>
+                  <span class="seg-metric-val" id="seg-preview-dist">0.00 km</span>
+                </div>
+                <div class="seg-metric">
+                  <span class="seg-metric-lbl">Desnivel</span>
+                  <span class="seg-metric-val text-accent" id="seg-preview-ele">+0 m</span>
+                </div>
+                <div class="seg-metric">
+                  <span class="seg-metric-lbl">Pendiente</span>
+                  <span class="seg-metric-val" id="seg-preview-grade">0.0%</span>
+                </div>
+                <div class="seg-metric">
+                  <span class="seg-metric-lbl">Categoría</span>
+                  <span class="seg-cat-badge" id="seg-preview-cat">Tramo</span>
+                </div>
+              </div>
+
+              <div class="seg-sliders-box">
+                <div class="seg-slider-row">
+                  <div class="seg-slider-label">
+                    <span class="seg-dot start"></span>
+                    <span>Inicio del segmento</span>
+                    <strong id="seg-start-km-label">0.00 km</strong>
+                  </div>
+                  <input type="range" id="seg-start-slider" min="0" max="10" step="0.05" value="0" />
+                </div>
+
+                <div class="seg-slider-row">
+                  <div class="seg-slider-label">
+                    <span class="seg-dot end"></span>
+                    <span>Meta del segmento</span>
+                    <strong id="seg-end-km-label">1.00 km</strong>
+                  </div>
+                  <input type="range" id="seg-end-slider" min="0" max="10" step="0.05" value="1" />
+                </div>
+              </div>
+
+              <form id="create-segment-form" class="seg-creator-form">
+                <input
+                  type="text"
+                  id="seg-name-input"
+                  placeholder="Nombre del segmento (ej: La Huesera, Repecho Abantos…)"
+                  required
+                />
+                <div class="seg-creator-actions">
+                  <button type="button" class="btn btn-secondary btn-xs" id="cancel-segment-creator-btn">Cancelar</button>
+                  <button type="submit" class="btn btn-primary btn-xs" id="save-segment-btn">Guardar segmento</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Dock Inferior: Telemetría + Reproductor -->
+            <div class="viewer-dock">
+              <div class="telemetry-strip" id="telemetry-hud">
+                <div class="hud-item">
+                  <span class="hud-label">Velocidad</span>
+                  <span class="hud-val" id="hud-speed">0.0 <small>km/h</small></span>
+                </div>
+                <div class="hud-divider"></div>
+                <div class="hud-item">
+                  <span class="hud-label">Altitud</span>
+                  <span class="hud-val" id="hud-elevation">0 <small>m</small></span>
+                </div>
+                <div class="hud-divider"></div>
+                <div class="hud-item">
+                  <span class="hud-label">Pendiente</span>
+                  <span class="hud-val" id="hud-grade">0.0 <small>%</small></span>
+                </div>
+                <div class="hud-divider"></div>
+                <div class="hud-item">
+                  <span class="hud-label">Distancia</span>
+                  <span class="hud-val" id="hud-distance">0.00 / 0.00 <small>km</small></span>
+                </div>
+              </div>
+
+              <div class="viewer-controls-bar">
+                <div class="playback-actions">
+                  <button id="play-btn" class="control-btn play-btn" type="button" title="Reproducir / Pausar" aria-label="Reproducir">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="6 3 20 12 6 21 6 3" />
+                    </svg>
+                  </button>
+                  <button id="reset-cam-btn" class="control-btn" type="button" title="Encuadrar ruta" aria-label="Encuadrar ruta">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div class="timeline-container">
+                  <input type="range" id="timeline" min="0" max="100" value="0" step="0.1" aria-label="Progreso de la ruta" />
+                  <div class="timeline-meta">
+                    <span id="timeline-current-time">00:00</span>
+                    <span id="timeline-total-time">00:00</span>
+                  </div>
+                </div>
+
+                <select id="speed-selector" class="control-select" title="Velocidad de reproducción">
+                  <option value="0.25">0.25×</option>
+                  <option value="0.5">0.5×</option>
+                  <option value="1" selected>1×</option>
+                  <option value="2">2×</option>
+                  <option value="5">5×</option>
+                  <option value="10">10×</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel Lateral de Análisis -->
+          <aside class="activity-analysis-drawer" id="analysis-drawer">
+            <div class="drawer-header">
+              <span class="sport-badge-lg" id="detail-sport-badge">Sin seleccionar</span>
+              <h2 id="detail-title">Selecciona una actividad</h2>
+              <p class="detail-subtitle" id="detail-date">Elige una ruta en la pestaña Actividades</p>
+            </div>
+
+            <!-- Métricas Principales -->
+            <div class="stats-summary-grid">
+              <div class="stat-cell">
+                <span class="stat-label">Distancia</span>
+                <span class="stat-value" id="detail-distance">-- <small>km</small></span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-label">Tiempo</span>
+                <span class="stat-value" id="detail-time">--</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-label">Desnivel +</span>
+                <span class="stat-value text-accent" id="detail-elevation">-- <small>m</small></span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-label">Vel. Media</span>
+                <span class="stat-value" id="detail-avg-speed">--</span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-label">Vel. Máx</span>
+                <span class="stat-value" id="detail-max-speed">-- <small>km/h</small></span>
+              </div>
+              <div class="stat-cell">
+                <span class="stat-label">Calorías</span>
+                <span class="stat-value" id="detail-calories">-- <small>kcal</small></span>
+              </div>
+              <div class="stat-cell" id="detail-power-card" style="display: none;">
+                <span class="stat-label">Potencia / Cadencia</span>
+                <span class="stat-value" id="detail-power">--</span>
+              </div>
+              <div class="stat-cell" id="detail-hr-card" style="display: none;">
+                <span class="stat-label">Pulso med / máx</span>
+                <span class="stat-value" id="detail-hr">-- <small>bpm</small></span>
+              </div>
+              <div class="stat-cell" id="detail-gear-card" style="display: none;">
+                <span class="stat-label">Bicicleta</span>
+                <span class="stat-value stat-small" id="detail-gear">--</span>
+              </div>
+            </div>
+
+            <!-- Perfil de Elevación -->
+            <div class="analysis-section">
+              <div class="section-title-row">
+                <h3>Perfil de altimetría</h3>
+                <span class="profile-hover-info" id="profile-hover-info">Inspecciona con el cursor</span>
+              </div>
+              <div class="elevation-chart-wrapper">
+                <canvas id="elevation-canvas" width="600" height="150"></canvas>
+              </div>
+            </div>
+
+            <!-- Segmentos Strava en esta ruta -->
+            <div class="analysis-section">
+              <div class="section-title-row">
+                <h3>Segmentos en esta ruta</h3>
+                <button type="button" class="btn-link-filter" id="drawer-create-segment-btn">+ Crear segmento</button>
+              </div>
+              <div id="segments-list-container" class="segments-list-container">
+                <p class="maint-empty">Selecciona una ruta para ver o crear segmentos.</p>
+              </div>
+            </div>
+
+            <!-- Parciales -->
+            <div class="analysis-section">
+              <div class="section-title-row">
+                <h3>Parciales por km</h3>
+              </div>
+              <div class="splits-table-container">
+                <table class="splits-table">
+                  <thead>
+                    <tr>
+                      <th>KM</th>
+                      <th>Vel. Media</th>
+                      <th>Tiempo</th>
+                      <th>Desn.</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="splits-table-body">
+                    <tr><td colspan="5" class="empty-table-cell">Sin datos de parciales</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Notas -->
+            <div class="analysis-section" id="detail-desc-section">
+              <h3>Notas</h3>
+              <p id="detail-description" class="session-notes">Sin notas adicionales.</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- PESTAÑA 3: MI PERFIL (MULTI-USUARIO + MIS BICICLETAS Y EQUIPOS) -->
+      <section id="tab-profile" class="tab-pane">
+        <div class="page-container">
+          <!-- Cabecera de Perfil del Atleta -->
+          <div class="profile-hero-card">
+            <div class="profile-hero-left">
+              <div class="profile-avatar-lg" id="profile-avatar-lg">AC</div>
+              <div class="profile-identity">
+                <div class="profile-name-row">
+                  <h1 class="page-title" id="profile-display-name">Cargando perfil…</h1>
+                  <span class="sport-badge ride" id="profile-sport-badge">Ciclismo</span>
+                </div>
+                <p class="profile-meta-line" id="profile-display-meta">--</p>
+                <p class="profile-bio-text" id="profile-display-bio"></p>
+              </div>
+            </div>
+
+            <div class="profile-hero-right">
+              <div class="profile-mini-stats">
+                <div class="profile-mini-stat">
+                  <span class="metric-label">Peso</span>
+                  <span class="metric-val" id="profile-stat-weight">-- <small>kg</small></span>
+                </div>
+                <div class="profile-mini-stat">
+                  <span class="metric-label">FTP</span>
+                  <span class="metric-val" id="profile-stat-ftp">-- <small>W</small></span>
+                </div>
+                <div class="profile-mini-stat">
+                  <span class="metric-label">Relación</span>
+                  <span class="metric-val accent" id="profile-stat-wpkg">-- <small>W/kg</small></span>
+                </div>
+                <div class="profile-mini-stat">
+                  <span class="metric-label">FC Máx</span>
+                  <span class="metric-val" id="profile-stat-maxhr">-- <small>bpm</small></span>
+                </div>
+              </div>
+
+              <div class="profile-hero-actions">
+                <button type="button" class="btn btn-secondary" id="toggle-edit-profile-btn">Editar datos de perfil</button>
+                <button type="button" class="btn btn-secondary" id="logout-btn">Cerrar sesión / Cambiar usuario</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Formulario Desplegable de Edición de Perfil -->
+          <form id="profile-edit-form" class="profile-edit-card" style="display: none;">
+            <div class="profile-edit-header">
+              <h3>Datos personales y fisiológicos</h3>
+              <span class="profile-save-msg" id="profile-save-msg"></span>
+            </div>
+
+            <div class="form-row-3">
+              <div class="form-group">
+                <label for="prof-name">Nombre</label>
+                <input type="text" id="prof-name" required />
+              </div>
+              <div class="form-group">
+                <label for="prof-email">Email</label>
+                <input type="email" id="prof-email" required />
+              </div>
+              <div class="form-group">
+                <label for="prof-location">Ubicación</label>
+                <input type="text" id="prof-location" placeholder="Ej: Madrid, España" />
+              </div>
+            </div>
+
+            <div class="form-row-4">
+              <div class="form-group">
+                <label for="prof-sport">Disciplina principal</label>
+                <select id="prof-sport">
+                  <option value="Ride">Ciclismo de Carretera</option>
+                  <option value="MountainBikeRide">MTB / Montaña</option>
+                  <option value="GravelRide">Gravel</option>
+                  <option value="VirtualRide">Contrarreloj / Rodillo</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="prof-weight">Peso ciclista (kg)</label>
+                <input type="number" id="prof-weight" step="0.1" min="20" max="250" placeholder="Ej: 71" />
+              </div>
+              <div class="form-group">
+                <label for="prof-ftp">FTP (Vatios)</label>
+                <input type="number" id="prof-ftp" step="1" min="50" max="600" placeholder="Ej: 285" />
+              </div>
+              <div class="form-group">
+                <label for="prof-maxhr">FC Máxima (bpm)</label>
+                <input type="number" id="prof-maxhr" step="1" min="100" max="240" placeholder="Ej: 188" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="prof-bio">Biografía / Notas del ciclista</label>
+                <input type="text" id="prof-bio" placeholder="Puertos favoritos, especialidad, objetivos de la temporada…" />
+              </div>
+              <div class="form-group">
+                <label for="prof-password">Nueva contraseña (opcional)</label>
+                <input type="password" id="prof-password" placeholder="Dejar en blanco para mantener la actual" />
+              </div>
+            </div>
+
+            <div class="modal-actions">
+              <button type="button" class="btn btn-secondary" id="cancel-profile-edit-btn">Cerrar</button>
+              <button type="submit" class="btn btn-primary">Guardar perfil</button>
+            </div>
+          </form>
+
+          <!-- INTEGRACIÓN GARMIN EDGE 1040 (CONNECT IQ) -->
+          <div class="dashboard-card" style="margin-top: 18px;">
+            <div class="section-title-row" style="margin-bottom: 10px;">
+              <div>
+                <h3 style="margin-bottom: 2px;">Integración Garmin Edge 1040 (Route3D Live)</h3>
+                <p style="font-size: 12.5px; color: var(--text-muted);">
+                  Genera tu clave privada para conectar el campo de datos Connect IQ de tu Edge 1040 y ver viento relativo, meteo, fuentes y segmentos en vivo según tu GPS.
+                </p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary btn-xs" id="garmin-generate-key-btn">Generar clave Garmin</button>
+                <button type="button" class="btn btn-secondary btn-xs" id="garmin-revoke-key-btn" style="display: none;">Revocar clave</button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px;">
+              <div class="modal-section-box" style="padding: 12px 14px; gap: 4px;">
+                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Endpoint Live API (HTTPS en PRO)</span>
+                <code id="garmin-endpoint-url" style="font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); word-break: break-all;"></code>
+              </div>
+              <div class="modal-section-box" style="padding: 12px 14px; gap: 4px;">
+                <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Estado de clave privada</span>
+                <span id="garmin-key-status" style="font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">Sin clave activa</span>
+              </div>
+            </div>
+
+            <div id="garmin-new-key-box" class="modal-section-box" style="display: none; margin-top: 10px; border-color: var(--accent); background: var(--accent-soft);">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                <div>
+                  <strong style="font-size: 12px; color: var(--accent);">Copia esta clave ahora (por seguridad no volverá a mostrarse):</strong>
+                  <div id="garmin-new-key-value" style="font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--text-primary); margin-top: 4px; word-break: break-all;"></div>
+                </div>
+                <button type="button" class="btn btn-primary btn-xs" id="garmin-copy-key-btn">Copiar clave</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- APARTADO DE MI GARAJE DE BICICLETAS DENTRO DE MI PERFIL -->
+          <div class="profile-section-divider"></div>
+
+          <div class="page-head">
+            <div>
+              <h2 class="section-heading-lg">Mi Garaje de Bicicletas</h2>
+              <p class="page-subtitle" id="gear-summary-subtitle">Control de kilometraje, SAG de suspensiones y revisiones de tus bicicletas</p>
+            </div>
+            <button id="open-gear-modal-btn" class="btn btn-primary" type="button">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              <span>Añadir bicicleta</span>
+            </button>
+          </div>
+
+          <div class="toolbar">
+            <div class="sport-filters" id="gear-category-filters" role="tablist" aria-label="Filtrar bicicletas por modalidad">
+              <button class="filter-chip active" data-category="all" type="button">Todas</button>
+              <button class="filter-chip" data-category="Road" type="button">Carretera</button>
+              <button class="filter-chip" data-category="MTB" type="button">MTB</button>
+              <button class="filter-chip" data-category="Gravel" type="button">Gravel</button>
+              <button class="filter-chip" data-category="TT" type="button">Cabra / TT</button>
+            </div>
+          </div>
+
+          <div class="gear-grid" id="gear-container">
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <p>Cargando garaje de bicicletas…</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PESTAÑA 4: ESTADÍSTICAS -->
+      <section id="tab-stats" class="tab-pane">
+        <div class="page-container stats-container">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Estadísticas de Ciclismo</h1>
+              <p class="page-subtitle">Volumen acumulado, récords y desglose por modalidad</p>
+            </div>
+          </div>
+
+          <div class="kpi-cards-grid" id="kpi-cards-grid">
+            <div class="kpi-card">
+              <span class="kpi-title">Distancia total</span>
+              <span class="kpi-number" id="kpi-distance">0.0 <small>km</small></span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title">Horas sobre la bici</span>
+              <span class="kpi-number" id="kpi-hours">0.0 <small>h</small></span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title">Desnivel escalado</span>
+              <span class="kpi-number text-accent" id="kpi-elevation">0 <small>m</small></span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title">Energía consumida</span>
+              <span class="kpi-number" id="kpi-calories">0 <small>kcal</small></span>
+            </div>
+          </div>
+
+          <div class="dashboard-columns">
+            <div class="dashboard-card">
+              <h3>Récords sobre la bici</h3>
+              <div class="records-list" id="records-list">
+                <div class="record-item">
+                  <span class="record-name">Salida más larga</span>
+                  <span class="record-val" id="rec-longest">-- km</span>
+                </div>
+                <div class="record-item">
+                  <span class="record-name">Mayor desnivel en una ruta</span>
+                  <span class="record-val text-accent" id="rec-climb">-- m</span>
+                </div>
+                <div class="record-item">
+                  <span class="record-name">Velocidad máxima alcanzada</span>
+                  <span class="record-val" id="rec-speed">-- km/h</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="dashboard-card">
+              <h3>Desglose por modalidad</h3>
+              <div class="sports-breakdown" id="sports-breakdown">
+                <!-- Generado dinámicamente -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PESTAÑA 5: CALCULADORA DE PRESIÓN DE NEUMÁTICOS (CARRETERA, GRAVEL Y MTB) -->
+      <section id="tab-lab" class="tab-pane">
+        <div class="page-container">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Calculadora de Presión de Neumáticos</h1>
+              <p class="page-subtitle">Cálculo físico de presión óptima (BAR / PSI) para Carretera, Gravel y MTB conectado con tu garaje</p>
+            </div>
+          </div>
+
+          <div id="lab-tool-pressure" class="lab-tool-panel">
+            <div class="lab-grid-2col">
+              <!-- Panel de Parámetros -->
+              <div class="dashboard-card lab-form-card">
+                <div class="section-title-row">
+                  <h3>Parámetros de Ciclista, Bici y Ruedas</h3>
+                  <span class="profile-hover-info">Carretera · Gravel · MTB</span>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="tp-bike-select">Cargar bicicleta de tu garaje</label>
+                    <select id="tp-bike-select">
+                      <option value="">— Selección manual —</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="tp-discipline">Disciplina</label>
+                    <select id="tp-discipline">
+                      <option value="Road">Ciclismo de Carretera</option>
+                      <option value="Gravel">Gravel</option>
+                      <option value="MTB">MTB / Montaña (XC / Trail / Enduro)</option>
+                      <option value="TT">Contrarreloj / Cabra TT</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-row-3">
+                  <div class="form-group">
+                    <label for="tp-rider-weight">Peso ciclista (kg)</label>
+                    <input type="number" id="tp-rider-weight" min="35" max="160" step="0.5" value="72" />
+                  </div>
+                  <div class="form-group">
+                    <label for="tp-bike-weight">Peso bici + equipo (kg)</label>
+                    <input type="number" id="tp-bike-weight" min="5" max="30" step="0.2" value="8.2" />
+                  </div>
+                  <div class="form-group">
+                    <label for="tp-wheel-size">Diámetro rueda</label>
+                    <select id="tp-wheel-size">
+                      <option value="700c">700c / 29"</option>
+                      <option value="650b">650b / 27.5"</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-row-3">
+                  <div class="form-group">
+                    <label for="tp-tire-width">Ancho cubierta Del. (mm)</label>
+                    <input type="number" id="tp-tire-width" min="22" max="75" step="1" value="28" />
+                  </div>
+                  <div class="form-group">
+                    <label for="tp-tire-width-rear">Ancho cubierta Tras. (mm)</label>
+                    <input type="number" id="tp-tire-width-rear" min="22" max="75" step="1" value="28" />
+                  </div>
+                  <div class="form-group">
+                    <label for="tp-rim-width">Ancho interno llanta (mm)</label>
+                    <input type="number" id="tp-rim-width" min="15" max="40" step="1" value="21" />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="tp-setup">Configuración / Montaje</label>
+                    <select id="tp-setup">
+                      <option value="tubeless">Tubeless (Líquido sellante)</option>
+                      <option value="tpu">Cámara TPU / Látex ligera</option>
+                      <option value="butyl">Cámara de Butilo estándar</option>
+                      <option value="hookless">Tubeless Hookless (máx 5.0 bar / 72.5 PSI)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="tp-casing">Carcasa del neumático</label>
+                    <select id="tp-casing">
+                      <option value="standard">Estándar / All-round (120 TPI)</option>
+                      <option value="supple">Competición / Flexible (320 TPI / Cotton)</option>
+                      <option value="reinforced">Reforzada / Antipinchazos / Trail</option>
+                      <option value="enduro">Doble carcasa / Enduro / DH</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-row-3">
+                  <div class="form-group">
+                    <label for="tp-surface">Estado del terreno / firme</label>
+                    <select id="tp-surface">
+                      <option value="smooth_dry">Asfalto liso y seco</option>
+                      <option value="rough_dry">Asfalto rugoso / roto seco</option>
+                      <option value="wet">Mojado / Lluvia (máximo agarre)</option>
+                      <option value="gravel_fast">Gravel compacto / Pista rápida</option>
+                      <option value="gravel_chunky">Gravel suelto / Piedra y roto</option>
+                      <option value="mtb_dry">MTB seco / Sendero y raíces</option>
+                      <option value="mtb_mud">MTB barro / Roca húmeda</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="tp-feel">Sensación que buscas</label>
+                    <select id="tp-feel">
+                      <option value="balanced">Equilibrado (Eficiencia + Agarre)</option>
+                      <option value="comfort">Confort y Tracción (+Agarre)</option>
+                      <option value="fast">Rodador / Competición (+Firmeza)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="tp-insert">Inserto / Mousse interior</label>
+                    <select id="tp-insert">
+                      <option value="none">Sin inserto</option>
+                      <option value="light">Mousse ligero (XC / Gravel / Road)</option>
+                      <option value="pro">Mousse Enduro / Protección llanta</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Panel de Resultados Visuales (Delantera Verde Lima + Trasera Azul Cielo + Desglose) -->
+              <div class="dashboard-card lab-results-card">
+                <div class="section-title-row">
+                  <h3>Presión Óptima Recomendada</h3>
+                  <span class="profile-hover-info" id="tp-total-weight-badge">80.2 kg totales</span>
+                </div>
+
+                <div class="tp-pressure-gauges-grid">
+                  <div class="tp-gauge-box front">
+                    <div class="tp-gauge-head">
+                      <span class="tp-dot front"></span>
+                      <span>DELANTERA</span>
+                    </div>
+                    <div class="tp-gauge-main">
+                      <span class="tp-psi-num front" id="tp-front-psi">60</span>
+                      <span class="tp-psi-unit">PSI</span>
+                    </div>
+                    <div class="tp-bar-sub" id="tp-front-bar">4.15 bar</div>
+                    <div class="tp-weight-split" id="tp-front-load">Reparto: 46% (~36.9 kg)</div>
+                  </div>
+
+                  <div class="tp-gauge-box rear">
+                    <div class="tp-gauge-head">
+                      <span class="tp-dot rear"></span>
+                      <span>TRASERA</span>
+                    </div>
+                    <div class="tp-gauge-main">
+                      <span class="tp-psi-num rear" id="tp-rear-psi">65</span>
+                      <span class="tp-psi-unit">PSI</span>
+                    </div>
+                    <div class="tp-bar-sub" id="tp-rear-bar">4.50 bar</div>
+                    <div class="tp-weight-split" id="tp-rear-load">Reparto: 54% (~43.3 kg)</div>
+                  </div>
+                </div>
+
+                <div id="tp-hookless-warning" class="tp-warning-banner" style="display: none;"></div>
+
+                <!-- Desglose transparente del cálculo -->
+                <div class="tp-breakdown-box">
+                  <h4>Transparencia del cálculo físico (Paso a Paso)</h4>
+                  <div id="tp-breakdown-list" class="tp-breakdown-list"></div>
+                </div>
+
+                <!-- Rango operativo según terreno -->
+                <div class="tp-range-strip" id="tp-range-strip"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- MODAL: SUBIR GPX -->
+    <div class="modal-backdrop" id="upload-modal" style="display: none;">
+      <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
+        <div class="modal-header">
+          <h3 id="upload-modal-title">Subir ruta GPX en bicicleta</h3>
+          <button class="modal-close" id="close-upload-modal" type="button" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <form id="upload-gpx-form" class="modal-form">
+          <div class="drop-zone" id="drop-zone">
+            <svg class="drop-zone-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <p><strong>Arrastra tu archivo .gpx</strong> o haz clic para seleccionarlo</p>
+            <input type="file" id="modal-gpx-input" accept=".gpx" style="display: none;" />
+            <span class="selected-file-name" id="selected-file-name">Ningún archivo seleccionado</span>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="act-title">Título de la salida</label>
+              <input type="text" id="act-title" placeholder="Ej: Subida a Morcuera y Canencia" required />
+            </div>
+            <div class="form-group">
+              <label for="act-type">Modalidad de ciclismo</label>
+              <select id="act-type">
+                <option value="Ride">Ciclismo de Carretera</option>
+                <option value="MountainBikeRide">MTB / Montaña</option>
+                <option value="GravelRide">Gravel</option>
+                <option value="VirtualRide">Contrarreloj / Rodillo</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="act-gear-select">Bicicleta</label>
+              <select id="act-gear-select">
+                <option value="">Sin especificar</option>
+              </select>
+              <input type="text" id="act-gear" placeholder="Nombre de la bicicleta" style="display: none; margin-top: 6px;" />
+            </div>
+            <div class="form-group">
+              <label for="act-rpe">Esfuerzo percibido (RPE 1–10)</label>
+              <input type="number" id="act-rpe" min="1" max="10" placeholder="Opcional" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="act-desc">Notas de la ruta</label>
+            <textarea id="act-desc" rows="3" placeholder="Sensaciones de piernas, viento, presiones, puertos…"></textarea>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="cancel-upload-btn">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="submit-upload-btn">Guardar ruta</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL: EDITAR ACTIVIDAD -->
+    <div class="modal-backdrop" id="edit-modal" style="display: none;">
+      <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+        <div class="modal-header">
+          <h3 id="edit-modal-title">Editar ruta</h3>
+          <button class="modal-close" id="close-edit-modal" type="button" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <form id="edit-form" class="modal-form">
+          <input type="hidden" id="edit-id" />
+          <div class="form-group">
+            <label for="edit-title">Título</label>
+            <input type="text" id="edit-title" required />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="edit-type">Modalidad</label>
+              <select id="edit-type">
+                <option value="Ride">Ciclismo de Carretera</option>
+                <option value="MountainBikeRide">MTB / Montaña</option>
+                <option value="GravelRide">Gravel</option>
+                <option value="VirtualRide">Contrarreloj / Rodillo</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="edit-gear-select">Bicicleta</label>
+              <select id="edit-gear-select">
+                <option value="">Sin especificar</option>
+              </select>
+              <input type="text" id="edit-gear" placeholder="Nombre de la bicicleta" style="display: none; margin-top: 6px;" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="edit-desc">Notas</label>
+            <textarea id="edit-desc" rows="3"></textarea>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="cancel-edit-btn">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar cambios</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL: CREAR / EDITAR BICICLETA -->
+    <div class="modal-backdrop" id="gear-modal" style="display: none;">
+      <div class="modal-content modal-lg" role="dialog" aria-modal="true" aria-labelledby="gear-modal-title">
+        <div class="modal-header">
+          <h3 id="gear-modal-title">Añadir bicicleta</h3>
+          <button class="modal-close" id="close-gear-modal" type="button" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <form id="gear-form" class="modal-form">
+          <input type="hidden" id="gear-id" />
+          <input type="hidden" id="gear-category" value="bike" />
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="gear-name">Nombre / Alias de la bicicleta</label>
+              <input type="text" id="gear-name" placeholder="Ej: Orbea Oiz M-Pro" required />
+            </div>
+            <div class="form-group" id="gear-biketype-group">
+              <label for="gear-biketype">Modalidad de bicicleta</label>
+              <select id="gear-biketype">
+                <option value="Road">Carretera</option>
+                <option value="MTB">MTB / Montaña</option>
+                <option value="Gravel">Gravel</option>
+                <option value="TT">Contrarreloj / Cabra TT</option>
+                <option value="Other">Otra</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="gear-brand">Marca</label>
+              <input type="text" id="gear-brand" placeholder="Ej: Orbea, Specialized, Canyon" />
+            </div>
+            <div class="form-group">
+              <label for="gear-model">Modelo</label>
+              <input type="text" id="gear-model" placeholder="Ej: Oiz M-Pro XC" />
+            </div>
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label for="gear-weight">Peso (kg)</label>
+              <input type="number" id="gear-weight" step="0.1" min="0" placeholder="Ej: 10.4" />
+            </div>
+            <div class="form-group">
+              <label for="gear-initial-km">Km previos</label>
+              <input type="number" id="gear-initial-km" step="1" min="0" value="0" />
+            </div>
+            <div class="form-group">
+              <label for="gear-max-km">Intervalo revisión (km)</label>
+              <input type="number" id="gear-max-km" step="50" min="0" placeholder="Ej: 3000" />
+            </div>
+          </div>
+
+          <!-- SECCIÓN DE SUSPENSIONES Y SAG (HORQUILLA Y AMORTIGUADOR) -->
+          <div id="gear-suspension-section" class="modal-section-box">
+            <div class="modal-section-head">
+              <h4>Suspensiones: Horquilla y Amortiguador (SAG y Presión)</h4>
+              <span>Opcional (MTB / Gravel / Doble suspensión)</span>
+            </div>
+
+            <div class="suspension-form-block">
+              <span class="suspension-subhead">Horquilla delantera</span>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="gear-fork-model">Modelo horquilla</label>
+                  <input type="text" id="gear-fork-model" placeholder="Ej: Fox 34 Step-Cast 120mm" />
+                </div>
+                <div class="form-row-3">
+                  <div class="form-group">
+                    <label for="gear-fork-sag">SAG (%)</label>
+                    <input type="number" id="gear-fork-sag" step="1" min="0" max="50" placeholder="20" />
+                  </div>
+                  <div class="form-group">
+                    <label for="gear-fork-psi">Aire (PSI)</label>
+                    <input type="number" id="gear-fork-psi" step="1" min="0" max="350" placeholder="76" />
+                  </div>
+                  <div class="form-group">
+                    <label for="gear-fork-rebound">Rebote</label>
+                    <input type="text" id="gear-fork-rebound" placeholder="-6 clicks" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="suspension-form-block">
+              <span class="suspension-subhead">Amortiguador trasero</span>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="gear-shock-model">Modelo amortiguador</label>
+                  <input type="text" id="gear-shock-model" placeholder="Ej: Fox Float DPS Kashima" />
+                </div>
+                <div class="form-row-3">
+                  <div class="form-group">
+                    <label for="gear-shock-sag">SAG (%)</label>
+                    <input type="number" id="gear-shock-sag" step="1" min="0" max="50" placeholder="25" />
+                  </div>
+                  <div class="form-group">
+                    <label for="gear-shock-psi">Aire (PSI)</label>
+                    <input type="number" id="gear-shock-psi" step="1" min="0" max="400" placeholder="165" />
+                  </div>
+                  <div class="form-group">
+                    <label for="gear-shock-rebound">Rebote</label>
+                    <input type="text" id="gear-shock-rebound" placeholder="-5 clicks" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="gear-notes">Componentes / Notas de montaje</label>
+            <textarea id="gear-notes" rows="2" placeholder="Ej: Grupo Ultegra Di2 / XT, Ruedas, Cubiertas…"></textarea>
+          </div>
+
+          <label class="checkbox-row" for="gear-default">
+            <input type="checkbox" id="gear-default" />
+            <span>★ Marcar como favorita (se seleccionará siempre por defecto al subir una ruta)</span>
+          </label>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="cancel-gear-btn">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="submit-gear-btn">Guardar bicicleta</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL: REGISTRAR REVISIÓN / MODIFICACIÓN DE LA BICICLETA -->
+    <div class="modal-backdrop" id="maintenance-modal" style="display: none;">
+      <div class="modal-content modal-lg" role="dialog" aria-modal="true" aria-labelledby="maintenance-modal-title">
+        <div class="modal-header">
+          <div>
+            <h3 id="maintenance-modal-title">Registrar revisión o modificación</h3>
+            <p id="maintenance-bike-subtitle" style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;"></p>
+          </div>
+          <button class="modal-close" id="close-maintenance-modal" type="button" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <form id="maintenance-form" class="modal-form">
+          <input type="hidden" id="maint-gear-id" />
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label for="maint-date">Fecha de la revisión</label>
+              <input type="date" id="maint-date" required />
+            </div>
+            <div class="form-group">
+              <label for="maint-km">Kilómetros de la bici</label>
+              <input type="number" id="maint-km" step="1" min="0" required />
+            </div>
+            <div class="form-group">
+              <label for="maint-type">Tipo de intervención</label>
+              <select id="maint-type">
+                <option value="drivetrain">Cadena / Transmisión</option>
+                <option value="suspension">Suspensiones (Aire / SAG / Retenes)</option>
+                <option value="tires">Neumáticos / Líquido Tubeless</option>
+                <option value="brakes">Frenos / Pastillas / Purgado</option>
+                <option value="general">Revisión general / Taller</option>
+                <option value="upgrade">Modificación / Nuevo componente</option>
+                <option value="other">Otro ajuste</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="maint-title">¿Qué se ha hecho o modificado?</label>
+            <input
+              type="text"
+              id="maint-title"
+              placeholder="Ej: Cambio de cadena XT / Aire a amortiguadores y ajuste de SAG"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="maint-details">Detalles de la revisión / piezas / presiones</label>
+            <textarea
+              id="maint-details"
+              rows="3"
+              placeholder="Describe qué piezas se han cambiado, líquido añadido, presiones, sensaciones o ajustes realizados…"
+            ></textarea>
+          </div>
+
+          <div class="modal-section-box">
+            <div class="modal-section-head">
+              <h4>Actualizar SAG y presión de suspensiones en esta revisión</h4>
+              <span>Si has metido aire o reajustado el SAG hoy, actualízalo aquí</span>
+            </div>
+
+            <div class="form-row-4">
+              <div class="form-group">
+                <label for="maint-fork-sag">SAG Horquilla (%)</label>
+                <input type="number" id="maint-fork-sag" step="1" min="0" max="50" placeholder="Ej: 20" />
+              </div>
+              <div class="form-group">
+                <label for="maint-fork-psi">Horquilla (PSI)</label>
+                <input type="number" id="maint-fork-psi" step="1" min="0" max="350" placeholder="Ej: 76" />
+              </div>
+              <div class="form-group">
+                <label for="maint-shock-sag">SAG Amortig. (%)</label>
+                <input type="number" id="maint-shock-sag" step="1" min="0" max="50" placeholder="Ej: 25" />
+              </div>
+              <div class="form-group">
+                <label for="maint-shock-psi">Amortig. (PSI)</label>
+                <input type="number" id="maint-shock-psi" step="1" min="0" max="400" placeholder="Ej: 165" />
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="cancel-maintenance-btn">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar revisión</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

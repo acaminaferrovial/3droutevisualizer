@@ -2,6 +2,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import './style.css';
 import * as turf from '@turf/turf';
+import { APP_VERSION, RELEASE_NOTES } from './releaseNotes.js';
 
 // ================= CONFIGURACIÓN MAPBOX =================
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || localStorage.getItem('MAPBOX_TOKEN') || '';
@@ -98,6 +99,7 @@ let selectedZoneSegmentId = null;
 let plannerMap = null;
 let isPlanner3D = false;
 let isPlannerSnapEnabled = true;
+let isPlannerLoopClosed = false;
 let plannerWaypoints = [];
 let plannerWaypointsOnWay = [];
 let plannerLegs = [];
@@ -2157,6 +2159,33 @@ function initPlannerMap() {
       await handleAddWaterSourceAtCoord(clickedCoord);
       return;
     }
+
+    // Si el usuario hace clic sobre la propia línea de una ruta ya trazada, insertamos un punto intermedio editable ahí
+    if (plannerWaypoints.length >= 2 && plannerLegs.length >= 1) {
+      const hitFeatures = plannerMap.queryRenderedFeatures(
+        [
+          [e.point.x - 9, e.point.y - 9],
+          [e.point.x + 9, e.point.y + 9]
+        ],
+        { layers: ['planner-route-line', 'planner-wind-segments-line'].filter((id) => plannerMap.getLayer(id)) }
+      );
+      if (hitFeatures.length > 0) {
+        const isNearWay = checkIfClickIsNearRoadOrTrail(e.point, plannerMap);
+        await insertPlannerWaypointOnRoute(clickedCoord, isNearWay);
+        return;
+      }
+    }
+
+    // Si la ruta circular está cerrada, no añadimos puntos sueltos fuera del bucle
+    if (isPlannerLoopClosed) {
+      const statusEl = document.getElementById('planner-status-text');
+      if (statusEl) {
+        statusEl.innerText =
+          'Ruta circular cerrada · Arrastra los puntos para editarla, clica en la línea para insertar o pulsa Circular para reabrir';
+      }
+      return;
+    }
+
     const isNearWay = checkIfClickIsNearRoadOrTrail(e.point, plannerMap);
     await addPlannerWaypoint(clickedCoord, isNearWay);
   });
@@ -2573,6 +2602,178 @@ function getPlannerMetrics() {
   };
 }
 
+function syncPlannerLoopUI() {
+  const loopBtn = document.getElementById('planner-loop-btn');
+  if (loopBtn) {
+    loopBtn.classList.toggle('active', isPlannerLoopClosed);
+    const span = loopBtn.querySelector('span');
+    if (span) span.innerText = isPlannerLoopClosed ? 'Circular ✓' : 'Circular';
+  }
+  if (plannerMap) {
+    plannerMap.getCanvas().style.cursor = isPlannerLoopClosed ? 'default' : 'crosshair';
+  }
+}
+
+async function movePlannerWaypoint(idx, newCoord, isNearWay = true) {
+  if (idx < 0 || idx >= plannerWaypoints.length) return;
+  const statusEl = document.getElementById('planner-status-text');
+  if (statusEl) statusEl.innerText = 'Recalculando trazado…';
+
+  plannerWaypoints[idx] = newCoord;
+  plannerWaypointsOnWay[idx] = isNearWay;
+
+  // Si es una ruta circular cerrada y movemos el pin Inicio/Meta (idx 0), movemos también el último punto para mantener el bucle cerrado
+  const lastIdx = plannerWaypoints.length - 1;
+  const movingClosedStart = isPlannerLoopClosed && idx === 0 && lastIdx > 0;
+  if (movingClosedStart) {
+    plannerWaypoints[lastIdx] = [...newCoord];
+    plannerWaypointsOnWay[lastIdx] = isNearWay;
+  }
+
+  // Recalcular tramo anterior (idx - 1 -> idx)
+  if (idx > 0) {
+    const resPrev = await fetchSnappedPathBetweenPoints(
+      plannerWaypoints[idx - 1],
+      plannerWaypoints[idx],
+      plannerWaypointsOnWay[idx - 1] ?? true,
+      isNearWay,
+      isPlannerSnapEnabled
+    );
+    plannerLegs[idx - 1] = resPrev.coords;
+    if (isPlannerSnapEnabled && isNearWay) {
+      plannerWaypoints[idx] = resPrev.snappedEnd;
+    }
+  }
+
+  // Recalcular tramo siguiente (idx -> idx + 1)
+  if (idx < lastIdx) {
+    const resNext = await fetchSnappedPathBetweenPoints(
+      plannerWaypoints[idx],
+      plannerWaypoints[idx + 1],
+      isNearWay,
+      plannerWaypointsOnWay[idx + 1] ?? true,
+      isPlannerSnapEnabled
+    );
+    plannerLegs[idx] = resNext.coords;
+    if (idx === 0 && isPlannerSnapEnabled && isNearWay) {
+      plannerWaypoints[0] = resNext.snappedStart;
+      if (movingClosedStart) plannerWaypoints[lastIdx] = [...resNext.snappedStart];
+    }
+  }
+
+  // Si movimos Inicio/Meta en circular, recalcular también el último tramo de cierre (lastIdx - 1 -> lastIdx)
+  if (movingClosedStart && lastIdx >= 2) {
+    const resClose = await fetchSnappedPathBetweenPoints(
+      plannerWaypoints[lastIdx - 1],
+      plannerWaypoints[lastIdx],
+      plannerWaypointsOnWay[lastIdx - 1] ?? true,
+      isNearWay,
+      isPlannerSnapEnabled
+    );
+    plannerLegs[lastIdx - 1] = resClose.coords;
+  }
+
+  rebuildPlannerRouteAndElevation();
+  updatePlannerMapDisplay();
+  refreshPlannerElevationsFromDemAPI();
+  if (plannerWeatherCheckpoints.length > 0) {
+    simulatePlannerRouteWeather();
+  }
+}
+
+async function removePlannerWaypoint(idx) {
+  if (idx < 0 || idx >= plannerWaypoints.length) return;
+
+  // Si solo quedan 2 puntos o borramos el inicio/meta de un bucle de 3 puntos, abrimos el bucle
+  if (isPlannerLoopClosed && plannerWaypoints.length <= 3) {
+    isPlannerLoopClosed = false;
+    syncPlannerLoopUI();
+  }
+
+  if (plannerWaypoints.length <= 1) {
+    clearPlannerRoute();
+    return;
+  }
+
+  const lastIdx = plannerWaypoints.length - 1;
+  if (isPlannerLoopClosed && idx === 0) {
+    // Reabrir bucle y quitar el punto de inicio
+    plannerWaypoints.pop();
+    plannerWaypointsOnWay.pop();
+    plannerLegs.pop();
+    isPlannerLoopClosed = false;
+    syncPlannerLoopUI();
+    plannerWaypoints.shift();
+    plannerWaypointsOnWay.shift();
+    plannerLegs.shift();
+  } else if (idx === 0) {
+    plannerWaypoints.shift();
+    plannerWaypointsOnWay.shift();
+    plannerLegs.shift();
+  } else if (idx === lastIdx) {
+    plannerWaypoints.pop();
+    plannerWaypointsOnWay.pop();
+    plannerLegs.pop();
+    isPlannerLoopClosed = false;
+    syncPlannerLoopUI();
+  } else {
+    // Punto intermedio: unir idx-1 con idx+1
+    plannerWaypoints.splice(idx, 1);
+    plannerWaypointsOnWay.splice(idx, 1);
+    const resBridge = await fetchSnappedPathBetweenPoints(
+      plannerWaypoints[idx - 1],
+      plannerWaypoints[idx],
+      plannerWaypointsOnWay[idx - 1] ?? true,
+      plannerWaypointsOnWay[idx] ?? true,
+      isPlannerSnapEnabled
+    );
+    plannerLegs.splice(idx - 1, 2, resBridge.coords);
+  }
+
+  rebuildPlannerRouteAndElevation();
+  updatePlannerMapDisplay();
+  refreshPlannerElevationsFromDemAPI();
+}
+
+async function insertPlannerWaypointOnRoute(coord, isNearWay = true) {
+  if (plannerLegs.length === 0) return;
+
+  // Encontrar el tramo más cercano al clic
+  const clickPt = turf.point(coord);
+  let bestLegIdx = 0;
+  let bestDist = Infinity;
+
+  plannerLegs.forEach((leg, i) => {
+    if (!leg || leg.length < 2) return;
+    const line = turf.lineString(leg.map((c) => [c[0], c[1]]));
+    const snapped = turf.nearestPointOnLine(line, clickPt, { units: 'meters' });
+    const d = snapped.properties?.dist ?? Infinity;
+    if (d < bestDist) {
+      bestDist = d;
+      bestLegIdx = i;
+    }
+  });
+
+  const insertIdx = bestLegIdx + 1;
+  const prevWp = plannerWaypoints[bestLegIdx];
+  const nextWp = plannerWaypoints[insertIdx];
+  if (!prevWp || !nextWp) return;
+
+  const [legA, legB] = await Promise.all([
+    fetchSnappedPathBetweenPoints(prevWp, coord, plannerWaypointsOnWay[bestLegIdx] ?? true, isNearWay, isPlannerSnapEnabled),
+    fetchSnappedPathBetweenPoints(coord, nextWp, isNearWay, plannerWaypointsOnWay[insertIdx] ?? true, isPlannerSnapEnabled)
+  ]);
+
+  const finalCoord = isPlannerSnapEnabled && isNearWay ? legA.snappedEnd : coord;
+  plannerWaypoints.splice(insertIdx, 0, finalCoord);
+  plannerWaypointsOnWay.splice(insertIdx, 0, isNearWay);
+  plannerLegs.splice(bestLegIdx, 1, legA.coords, legB.coords);
+
+  rebuildPlannerRouteAndElevation();
+  updatePlannerMapDisplay();
+  refreshPlannerElevationsFromDemAPI();
+}
+
 function updatePlannerMapDisplay() {
   plannerVertexMarkers.forEach((m) => m.remove());
   plannerVertexMarkers = [];
@@ -2580,18 +2781,47 @@ function updatePlannerMapDisplay() {
   plannerKmMarkers = [];
 
   if (plannerMap) {
+    const lastIdx = plannerWaypoints.length - 1;
     plannerWaypoints.forEach((coord, idx) => {
+      // En ruta circular cerrada, no duplicamos el marcador Meta encima de Inicio
+      if (isPlannerLoopClosed && idx === lastIdx && lastIdx > 0) return;
+
       const el = document.createElement('div');
       const isFirst = idx === 0;
-      const isLast = idx === plannerWaypoints.length - 1 && plannerWaypoints.length > 1;
-      if (isFirst || isLast) {
-        el.className = `route-pin ${isFirst ? 'start' : 'finish'}`;
+      const isLast = idx === lastIdx && plannerWaypoints.length > 1;
+
+      if (isFirst && isPlannerLoopClosed && lastIdx > 0) {
+        el.className = 'route-pin start editable-pin';
+        el.innerText = 'Inicio / Meta';
+        el.title = 'Arrastra para mover el Inicio/Meta · Clic derecho para borrar';
+      } else if (isFirst || isLast) {
+        el.className = `route-pin ${isFirst ? 'start' : 'finish'} editable-pin`;
         el.innerText = isFirst ? 'Inicio' : 'Meta';
+        el.title = `Arrastra para mover ${isFirst ? 'el inicio' : 'la meta'} · Clic derecho para borrar`;
       } else {
-        el.className = 'seg-draw-vertex';
-        el.title = `Punto de paso ${idx + 1}`;
+        el.className = 'seg-draw-vertex editable-pin';
+        el.title = `Punto ${idx + 1} · Arrastra para mover · Clic derecho para borrar`;
       }
-      const marker = new mapboxgl.Marker({ element: el }).setLngLat([coord[0], coord[1]]).addTo(plannerMap);
+
+      el.addEventListener('click', (ev) => ev.stopPropagation());
+      el.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        removePlannerWaypoint(idx);
+      });
+
+      const marker = new mapboxgl.Marker({ element: el, draggable: true })
+        .setLngLat([coord[0], coord[1]])
+        .addTo(plannerMap);
+
+      marker.on('dragend', async () => {
+        const lngLat = marker.getLngLat();
+        const newCoord = [Number(lngLat.lng.toFixed(6)), Number(lngLat.lat.toFixed(6))];
+        const px = plannerMap.project(lngLat);
+        const isNearWay = checkIfClickIsNearRoadOrTrail(px, plannerMap);
+        await movePlannerWaypoint(idx, newCoord, isNearWay);
+      });
+
       plannerVertexMarkers.push(marker);
     });
 
@@ -2651,9 +2881,11 @@ function updatePlannerMapDisplay() {
     if (plannerWaypoints.length === 0) {
       statusEl.innerText = 'Haz clic en el mapa para situar el punto de salida';
     } else if (plannerWaypoints.length === 1) {
-      statusEl.innerText = 'Salida fijada · haz clic en el mapa para ir trazando la ruta';
+      statusEl.innerText = 'Salida fijada · haz clic en el mapa para trazar (puedes arrastrar los puntos)';
+    } else if (isPlannerLoopClosed) {
+      statusEl.innerText = `Circular cerrada (${metrics.distanceKm.toFixed(2)} km · +${metrics.elevationGain} m) · Arrastra cualquier punto o clica en la línea para editar`;
     } else {
-      statusEl.innerText = `Ruta de ${metrics.distanceKm.toFixed(2)} km (+${metrics.elevationGain} m) · sigue añadiendo puntos o guárdala`;
+      statusEl.innerText = `Ruta de ${metrics.distanceKm.toFixed(2)} km (+${metrics.elevationGain} m) · Arrastra los puntos para moverlos o clic derecho para borrar`;
     }
   }
 
@@ -2910,6 +3142,8 @@ function clearPlannerRoute() {
   plannerElevationProfile = [];
   activePlannedRouteId = null;
   plannerBaseActivityId = null;
+  isPlannerLoopClosed = false;
+  syncPlannerLoopUI();
   const baseSelect = document.getElementById('planner-base-activity-select');
   if (baseSelect) baseSelect.value = '';
   clearPlannerWeatherOverlay();
@@ -4275,6 +4509,21 @@ function setupRoutePlanner() {
 
   if (loopBtn) {
     loopBtn.addEventListener('click', async () => {
+      if (isPlannerLoopClosed) {
+        // Reabrir la ruta circular quitando el tramo de cierre
+        if (plannerWaypoints.length > 2) {
+          plannerWaypoints.pop();
+          plannerWaypointsOnWay.pop();
+          if (plannerLegs.length > 0) plannerLegs.pop();
+        }
+        isPlannerLoopClosed = false;
+        syncPlannerLoopUI();
+        rebuildPlannerRouteAndElevation();
+        updatePlannerMapDisplay();
+        refreshPlannerElevationsFromDemAPI();
+        return;
+      }
+
       if (plannerWaypoints.length < 2) {
         alert('Añade al menos 2 puntos en el mapa antes de cerrar una ruta circular.');
         return;
@@ -4282,6 +4531,9 @@ function setupRoutePlanner() {
       const startCoord = [...plannerWaypoints[0]];
       const startWasOnWay = plannerWaypointsOnWay[0] ?? true;
       await addPlannerWaypoint(startCoord, startWasOnWay);
+      isPlannerLoopClosed = true;
+      syncPlannerLoopUI();
+      updatePlannerMapDisplay();
     });
   }
 
@@ -4299,6 +4551,10 @@ function setupRoutePlanner() {
   if (undoBtn) {
     undoBtn.addEventListener('click', () => {
       if (plannerWaypoints.length > 0) {
+        if (isPlannerLoopClosed) {
+          isPlannerLoopClosed = false;
+          syncPlannerLoopUI();
+        }
         plannerWaypoints.pop();
         plannerWaypointsOnWay.pop();
         if (plannerLegs.length > 0) plannerLegs.pop();
@@ -5864,12 +6120,124 @@ function setupEditModal() {
   }
 }
 
+// ================= NOTAS DE VERSIÓN (MOSTRAR UNA VEZ POR VERSIÓN + FOOTER) =================
+function getReleaseSeenStorageKey() {
+  const uid = currentUser?._id || currentUser?.id || 'guest';
+  return `route3d_seen_release_${uid}`;
+}
+
+function hasUserSeenCurrentRelease() {
+  return localStorage.getItem(getReleaseSeenStorageKey()) === APP_VERSION;
+}
+
+function markCurrentReleaseAsSeen() {
+  localStorage.setItem(getReleaseSeenStorageKey(), APP_VERSION);
+  const dot = document.getElementById('footer-release-dot');
+  if (dot) dot.style.display = 'none';
+}
+
+function renderReleaseNoteVersion(versionStr) {
+  const note = RELEASE_NOTES.find((r) => r.version === versionStr) || RELEASE_NOTES[0];
+  if (!note) return;
+
+  const badgeEl = document.getElementById('release-modal-version');
+  const dateEl = document.getElementById('release-modal-date');
+  const titleEl = document.getElementById('release-modal-title');
+  const subEl = document.getElementById('release-modal-subtitle');
+  const listEl = document.getElementById('release-highlights-list');
+  const tabsEl = document.getElementById('release-version-selector');
+
+  if (badgeEl) badgeEl.innerText = `v${note.version}`;
+  if (dateEl) dateEl.innerText = note.date || '';
+  if (titleEl) titleEl.innerText = note.title || `Novedades v${note.version}`;
+  if (subEl) subEl.innerText = note.subtitle || '';
+
+  if (tabsEl) {
+    if (RELEASE_NOTES.length > 1) {
+      tabsEl.style.display = 'flex';
+      tabsEl.innerHTML = RELEASE_NOTES.map(
+        (r) =>
+          `<button type="button" class="filter-chip ${r.version === note.version ? 'active' : ''}" data-rel-ver="${r.version}">v${r.version}</button>`
+      ).join('');
+      tabsEl.querySelectorAll('[data-rel-ver]').forEach((btn) => {
+        btn.addEventListener('click', () => renderReleaseNoteVersion(btn.dataset.relVer));
+      });
+    } else {
+      tabsEl.style.display = 'none';
+    }
+  }
+
+  if (listEl) {
+    listEl.innerHTML = (note.highlights || [])
+      .map((item) => {
+        const tagKey = String(item.tag || 'nuevo').toLowerCase();
+        return `
+          <div class="release-highlight-card">
+            <div class="release-highlight-top">
+              <span class="release-tag ${tagKey}">${item.tag || 'Nuevo'}</span>
+              <span class="release-highlight-title">${item.title}</span>
+            </div>
+            <p class="release-highlight-desc">${item.description}</p>
+          </div>
+        `;
+      })
+      .join('');
+  }
+}
+
+function openReleaseNotesModal(versionStr = APP_VERSION) {
+  const modal = document.getElementById('release-notes-modal');
+  if (!modal) return;
+  renderReleaseNoteVersion(versionStr);
+  modal.style.display = 'flex';
+}
+
+function closeReleaseNotesModal() {
+  const modal = document.getElementById('release-notes-modal');
+  if (modal) modal.style.display = 'none';
+  markCurrentReleaseAsSeen();
+}
+
+function checkAndShowReleaseNotesOnce() {
+  const pill = document.getElementById('footer-version-pill');
+  const dot = document.getElementById('footer-release-dot');
+  if (pill) pill.innerText = `v${APP_VERSION}`;
+
+  if (!hasUserSeenCurrentRelease()) {
+    if (dot) dot.style.display = 'inline-block';
+    setTimeout(() => {
+      if (currentUser && getAuthToken()) {
+        openReleaseNotesModal(APP_VERSION);
+      }
+    }, 350);
+  } else if (dot) {
+    dot.style.display = 'none';
+  }
+}
+
+function setupReleaseNotesModal() {
+  const openBtn = document.getElementById('open-release-notes-btn');
+  const closeBtn = document.getElementById('close-release-modal');
+  const ackBtn = document.getElementById('ack-release-notes-btn');
+  const modal = document.getElementById('release-notes-modal');
+
+  if (openBtn) openBtn.addEventListener('click', () => openReleaseNotesModal(APP_VERSION));
+  if (closeBtn) closeBtn.addEventListener('click', closeReleaseNotesModal);
+  if (ackBtn) ackBtn.addEventListener('click', closeReleaseNotesModal);
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeReleaseNotesModal();
+    });
+  }
+}
+
 // ================= CONFIGURACIÓN DE AUTH Y MI PERFIL =================
 function loadAllUserData() {
   activeGearFilter = 'all';
   loadGear();
   loadActivities();
   loadStatsSummary();
+  checkAndShowReleaseNotesOnce();
 }
 
 async function initAuthAndProfile() {
@@ -6250,10 +6618,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const editModal = document.getElementById('edit-modal');
       const gearModal = document.getElementById('gear-modal');
       const maintModal = document.getElementById('maintenance-modal');
+      const releaseModal = document.getElementById('release-notes-modal');
       if (uploadModal) uploadModal.style.display = 'none';
       if (editModal) editModal.style.display = 'none';
       if (gearModal) gearModal.style.display = 'none';
       if (maintModal) maintModal.style.display = 'none';
+      if (releaseModal && releaseModal.style.display !== 'none') closeReleaseNotesModal();
     }
   });
 
@@ -6266,6 +6636,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSegmentsZone();
   setupRoutePlanner();
   setupCyclingLab();
+  setupReleaseNotesModal();
 
   checkBackendHealth();
   initAuthAndProfile();

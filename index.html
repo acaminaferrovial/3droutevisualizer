@@ -1213,6 +1213,43 @@
       </section>
     </main>
 
+    <!-- FOOTER MINIMALISTA CON ACCESO A NOTAS DE VERSIÓN -->
+    <footer class="app-footer" id="app-footer">
+      <div class="footer-inner">
+        <span class="footer-brand">Route<strong>3D</strong> · Ciclismo y Planificación</span>
+        <button type="button" class="footer-release-btn" id="open-release-notes-btn" title="Ver novedades y notas de versión">
+          <span class="footer-release-dot" id="footer-release-dot" style="display: none;"></span>
+          <span>Notas de versión</span>
+          <span class="footer-version-pill" id="footer-version-pill">v1.0.0</span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- MODAL VISTOSO: NOTAS DE VERSIÓN / NOVEDADES -->
+    <div class="modal-backdrop" id="release-notes-modal" style="display: none;">
+      <div class="modal-content release-modal-content" role="dialog" aria-modal="true" aria-labelledby="release-modal-title">
+        <div class="release-modal-hero">
+          <button class="release-modal-close" id="close-release-modal" type="button" aria-label="Cerrar">&times;</button>
+          <div class="release-hero-meta">
+            <span class="release-version-badge" id="release-modal-version">v1.0.0</span>
+            <span class="release-date-label" id="release-modal-date">--</span>
+          </div>
+          <h3 id="release-modal-title">Novedades de Route3D</h3>
+          <p id="release-modal-subtitle" class="release-modal-subtitle"></p>
+        </div>
+
+        <div class="release-modal-body">
+          <div id="release-version-selector" class="release-version-tabs" style="display: none;"></div>
+          <div id="release-highlights-list" class="release-highlights-list"></div>
+        </div>
+
+        <div class="release-modal-footer">
+          <span class="release-footer-hint">Puedes consultar estas notas siempre desde el pie de página</span>
+          <button type="button" class="btn btn-primary" id="ack-release-notes-btn">¡Entendido, a rodar!</button>
+        </div>
+      </div>
+    </div>
+
     <!-- MODAL: SUBIR GPX -->
     <div class="modal-backdrop" id="upload-modal" style="display: none;">
       <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
